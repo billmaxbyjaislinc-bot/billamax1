@@ -1,0 +1,255 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{uid}/products/{productId}
+    // Fields:
+    //   - id: string (required)
+    //   - type: string (required, enum: ["PRODUCT", "SERVICE"])
+    //   - name: string (required, size: 1-100)
+    //   - price: number (required, >= 0)
+    //   - stock: number (optional, >= 0)
+    //   - barcode: string (optional, size: 0-50)
+    //
+    // Collection: /users/{uid}/clients/{clientId}
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required, size: 1-100)
+    //   - mobile: string (optional, size: 0-20)
+    //   - email: string (optional, format: email)
+    //   - address: string (optional, size: 0-500)
+    //   - totalBorrowed: number (required, >= 0)
+    //
+    // Collection: /users/{uid}/invoices/{invoiceId}
+    // Fields:
+    //   - id: string (required)
+    //   - date: string (required, format: ISO8601)
+    //   - clientId: string (required)
+    //   - clientName: string (required)
+    //   - items: list (required, size: 1-100)
+    //   - grandTotal: number (required, >= 0)
+    //   - paymentMethod: string (required, enum: ["CASH", "ONLINE", "BORROW"])
+    //
+    // Collection: /users/{uid}/config/app
+    // Fields:
+    //   - ownerName: string (required)
+    //   - shopName: string (required)
+    //   - shopMobile: string (required)
+    //   - pin: string (required)
+    //   - setupComplete: bool (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "anubhav45lt@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidProduct(data) {
+      return hasRequiredFields(['id', 'type', 'name', 'price']) &&
+             hasOnlyAllowedFields(['id', 'type', 'name', 'price', 'stock', 'barcode', 'category', 'unit', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             data.type in ['PRODUCT', 'SERVICE'] &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.price is number && data.price >= 0 && data.price < 1000000000 &&
+             (!('stock' in data) || (data.stock == null || (data.stock is number && data.stock >= -1000000 && data.stock <= 1000000))) &&
+             (!('barcode' in data) || (data.barcode is string && data.barcode.size() <= 100)) &&
+             (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
+             (!('unit' in data) || (data.unit is string && data.unit.size() <= 50)) &&
+             (!('createdAt' in data) || (data.createdAt is number));
+    }
+
+    function isValidClient(data) {
+      return hasRequiredFields(['id', 'name', 'totalBorrowed']) &&
+             hasOnlyAllowedFields(['id', 'name', 'mobile', 'email', 'address', 'totalBorrowed', 'notes', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.totalBorrowed is number && data.totalBorrowed >= -1000000 && data.totalBorrowed <= 1000000000 &&
+             (!('mobile' in data) || (data.mobile is string && data.mobile.size() <= 20)) &&
+             (!('email' in data) || (data.email == "" || isValidEmail(data.email))) &&
+             (!('address' in data) || (data.address is string && data.address.size() <= 1000)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+             (!('createdAt' in data) || (data.createdAt is number));
+    }
+
+    function isValidInvoice(data) {
+      return hasRequiredFields(['id', 'date', 'clientId', 'clientName', 'items', 'grandTotal', 'paymentMethod', 'subtotal', 'paidAmount', 'pendingAmount']) &&
+             hasOnlyAllowedFields([
+               'id', 'date', 'clientId', 'clientName', 'items', 'grandTotal', 'paymentMethod', 
+               'discount', 'tax', 'notes', 'status', 'discountType', 'discountAmount', 
+               'subtotal', 'paidAmount', 'pendingAmount', 'clientMobile', 'clientAddress',
+               'invoiceTheme', 'invoicePrimaryColor', 'showLogo', 'showSignature'
+             ]) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             isValidDateString(data.date) &&
+             data.clientId is string && data.clientId.size() <= 64 &&
+             data.clientName is string && data.clientName.size() <= 200 &&
+             data.items is list && data.items.size() > 0 && data.items.size() <= 200 &&
+             data.subtotal is number && data.subtotal >= 0 &&
+             data.grandTotal is number && data.grandTotal >= 0 && data.grandTotal < 1000000000 &&
+             data.paidAmount is number && data.paidAmount >= 0 &&
+             data.pendingAmount is number && data.pendingAmount >= 0 &&
+             data.paymentMethod in ['CASH', 'ONLINE', 'BORROW'] &&
+             (!('discount' in data) || (data.discount is number && data.discount >= 0)) &&
+             (!('discountType' in data) || (data.discountType in ['PERCENTAGE', 'AMOUNT'])) &&
+             (!('discountAmount' in data) || (data.discountAmount is number && data.discountAmount >= 0)) &&
+             (!('tax' in data) || (data.tax is number && data.tax >= 0)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+             (!('status' in data) || (data.status in ['PAID', 'PENDING', 'CANCELLED'])) &&
+             (!('clientMobile' in data) || (data.clientMobile is string)) &&
+             (!('clientAddress' in data) || (data.clientAddress is string));
+    }
+
+    function isValidConfig(data) {
+      return hasRequiredFields(['ownerName', 'shopName', 'shopMobile', 'pin', 'setupComplete']) &&
+             hasOnlyAllowedFields([
+               'ownerName', 'shopName', 'shopAddress', 'shopMobile', 'gstNumber', 'pin', 'setupComplete', 
+               'businessLogo', 'signatureImage', 'qrCodeImage', 'isDarkMode', 'invoiceTheme', 
+               'lowStockThreshold', 'currency', 'address', 'invoicePrimaryColor', 'showHsnColumn', 
+               'showFooterBranding', 'showTerms', 'invoiceGreetingVoice', 'welcomeGreetingText', 
+               'reminderGreetingText', 'reminderGreetingVoice', 'enableAudioGreeting',
+               'showLogo', 'showSignature', 'language'
+             ]) &&
+             data.ownerName is string && data.ownerName.size() > 0 && data.ownerName.size() <= 100 &&
+             data.shopName is string && data.shopName.size() > 0 && data.shopName.size() <= 100 &&
+             data.shopMobile is string && data.shopMobile.size() >= 10 && data.shopMobile.size() <= 20 &&
+             data.pin is string && (data.pin == "" || data.pin.matches("^\\d{4}$")) &&
+             data.setupComplete is bool &&
+             (!('lowStockThreshold' in data) || (data.lowStockThreshold is number && data.lowStockThreshold >= 0)) &&
+             (!('language' in data) || (data.language is string && (data.language == 'en' || data.language == 'hi' || data.language == 'hinglish'))) &&
+             (!('shopAddress' in data) || (data.shopAddress is string && data.shopAddress.size() <= 1000)) &&
+             (!('address' in data) || (data.address is string && data.address.size() <= 1000)) &&
+             (!('gstNumber' in data) || (data.gstNumber is string && data.gstNumber.size() <= 50));
+    }
+
+    function isValidPublicConfig(data) {
+      return hasRequiredFields(['shopName']) &&
+             hasOnlyAllowedFields([
+               'shopName', 'businessLogo', 'shopMobile', 'ownerName',
+               'welcomeGreetingText', 'reminderGreetingText', 'reminderGreetingVoice', 'invoiceGreetingVoice',
+               'invoiceTheme', 'invoicePrimaryColor', 'language'
+             ]) &&
+             data.shopName is string && data.shopName.size() > 0 &&
+             (!('businessLogo' in data) || (data.businessLogo == null || data.businessLogo is string)) &&
+             (!('shopMobile' in data) || (data.shopMobile == null || data.shopMobile is string)) &&
+             (!('ownerName' in data) || (data.ownerName == null || data.ownerName is string)) &&
+             (!('welcomeGreetingText' in data) || (data.welcomeGreetingText == null || data.welcomeGreetingText is string)) &&
+             (!('reminderGreetingText' in data) || (data.reminderGreetingText == null || data.reminderGreetingText is string)) &&
+             (!('reminderGreetingVoice' in data) || (data.reminderGreetingVoice == null || data.reminderGreetingVoice is string)) &&
+             (!('invoiceGreetingVoice' in data) || (data.invoiceGreetingVoice == null || data.invoiceGreetingVoice is string)) &&
+             (!('language' in data) || (data.language == null || data.language is string));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /app_updates/config {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // User-scoped data
+    match /users/{uid} {
+      allow read, write: if isOwner(uid) || isAdmin();
+
+      match /products/{productId} {
+        allow read: if isOwner(uid) || isAdmin();
+        allow create, update: if (isOwner(uid) || isAdmin()) && isValidProduct(request.resource.data);
+        allow delete: if isOwner(uid) || isAdmin();
+      }
+
+      match /clients/{clientId} {
+        allow read: if isOwner(uid) || isAdmin();
+        allow create, update: if (isOwner(uid) || isAdmin()) && isValidClient(request.resource.data);
+        allow delete: if isOwner(uid) || isAdmin();
+      }
+
+      match /invoices/{invoiceId} {
+        allow read: if true; // Publicly readable for sharing
+        allow create: if (isOwner(uid) || isAdmin()) && isValidInvoice(request.resource.data);
+        allow update: if (isOwner(uid) || isAdmin()) && isValidInvoice(request.resource.data);
+        allow delete: if isOwner(uid) || isAdmin();
+      }
+
+      match /config/{configId} {
+        allow read: if isOwner(uid) || isAdmin() || configId == 'public';
+        allow create, update: if (isOwner(uid) || isAdmin()) && 
+          (configId == 'app' ? isValidConfig(request.resource.data) : isValidPublicConfig(request.resource.data));
+      }
+
+      // Multi-business support
+      match /businesses/{businessId} {
+        allow read, write: if isOwner(uid) || isAdmin();
+
+        match /products/{productId} {
+          allow read: if isOwner(uid) || isAdmin();
+          allow create, update: if (isOwner(uid) || isAdmin()) && isValidProduct(request.resource.data);
+          allow delete: if isOwner(uid) || isAdmin();
+        }
+
+        match /clients/{clientId} {
+          allow read: if isOwner(uid) || isAdmin();
+          allow create, update: if (isOwner(uid) || isAdmin()) && isValidClient(request.resource.data);
+          allow delete: if isOwner(uid) || isAdmin();
+        }
+
+        match /invoices/{invoiceId} {
+          allow read: if true; // Publicly readable for sharing
+          allow create: if (isOwner(uid) || isAdmin()) && isValidInvoice(request.resource.data);
+          allow update: if (isOwner(uid) || isAdmin()) && isValidInvoice(request.resource.data);
+          allow delete: if isOwner(uid) || isAdmin();
+        }
+
+        match /config/{configId} {
+          allow read: if isOwner(uid) || isAdmin() || configId == 'public';
+          allow create, update: if (isOwner(uid) || isAdmin()) && 
+            (configId == 'app' ? isValidConfig(request.resource.data) : isValidPublicConfig(request.resource.data));
+        }
+      }
+    }
+  }
+}

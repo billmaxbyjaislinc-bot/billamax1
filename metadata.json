@@ -1,0 +1,13 @@
+{
+  "name": "BILLMAX",
+  "description": "Professional billing, inventory management, and invoice template customization. Mobile-first design for shopkeepers.",
+  "requestFramePermissions": [
+    "camera",
+    "contacts",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
