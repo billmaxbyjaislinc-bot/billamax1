@@ -1,0 +1,120 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Inventory item (product or service)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["PRODUCT", "SERVICE"] },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "stock": { "type": "number" },
+        "barcode": { "type": "string" }
+      },
+      "required": ["id", "type", "name", "price"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Customer information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "mobile": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "totalBorrowed": { "type": "number" }
+      },
+      "required": ["id", "name", "totalBorrowed"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Sales record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientMobile": { "type": "string" },
+        "items": { "type": "array", "items": { "$ref": "InvoiceItem" } },
+        "discount": { "type": "number" },
+        "discountType": { "type": "string", "enum": ["PERCENTAGE", "AMOUNT"] },
+        "discountAmount": { "type": "number" },
+        "subtotal": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "ONLINE", "BORROW"] },
+        "paidAmount": { "type": "number" },
+        "pendingAmount": { "type": "number" }
+      },
+      "required": ["id", "date", "clientId", "clientName", "items", "grandTotal", "paymentMethod"]
+    },
+    "InvoiceItem": {
+      "title": "InvoiceItem",
+      "description": "A line item in an invoice",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "quantity": { "type": "number" },
+        "price": { "type": "number" },
+        "total": { "type": "number" },
+        "type": { "type": "string", "enum": ["PRODUCT", "SERVICE"] }
+      },
+      "required": ["id", "name", "quantity", "price", "total"]
+    },
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Application settings and shop profile",
+      "type": "object",
+      "properties": {
+        "ownerName": { "type": "string" },
+        "shopName": { "type": "string" },
+        "shopMobile": { "type": "string" },
+        "pin": { "type": "string" },
+        "signatureImage": { "type": "string" },
+        "qrCodeImage": { "type": "string" },
+        "businessLogo": { "type": "string" },
+        "lowStockThreshold": { "type": "number" },
+        "setupComplete": { "type": "boolean" },
+        "invoiceTheme": { "type": "string" },
+        "isDarkMode": { "type": "boolean" }
+      },
+      "required": ["ownerName", "shopName", "shopMobile", "pin", "setupComplete"]
+    },
+    "AppUpdate": {
+      "title": "AppUpdate",
+      "description": "Global application update configuration",
+      "type": "object",
+      "properties": {
+        "isUpdateRequired": { "type": "boolean" },
+        "latestVersion": { "type": "string" },
+        "updateUrl": { "type": "string" }
+      },
+      "required": ["isUpdateRequired", "latestVersion", "updateUrl"]
+    }
+  },
+  "firestore": {
+    "/app_updates/config": {
+      "schema": "AppUpdate",
+      "description": "Global update settings"
+    },
+    "/users/{uid}/products/{productId}": {
+      "schema": "Product",
+      "description": "User's inventory products"
+    },
+    "/users/{uid}/clients/{clientId}": {
+      "schema": "Client",
+      "description": "User's client list"
+    },
+    "/users/{uid}/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "User's sales invoices"
+    },
+    "/users/{uid}/config/app": {
+      "schema": "AppConfig",
+      "description": "User's app configuration"
+    }
+  }
+}
